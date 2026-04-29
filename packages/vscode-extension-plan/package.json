@@ -1,0 +1,163 @@
+{
+  "name": "deployguard-vscode",
+  "displayName": "DeployGuard",
+  "description": "Real-time security scanning and deploy-readiness scoring inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "deployguard",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/deployguard"
+  },
+
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Linters", "Other"],
+  "keywords": ["security", "scanning", "SAST", "deploy", "secrets"],
+
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:javascript",
+    "onLanguage:typescriptreact",
+    "onLanguage:javascriptreact",
+    "onLanguage:python",
+    "onLanguage:go",
+    "onLanguage:json",
+    "workspaceContains:**/package.json",
+    "workspaceContains:**/go.mod"
+  ],
+
+  "main": "./dist/extension.js",
+
+  "contributes": {
+    "commands": [
+      {
+        "command": "deployguard.scanFile",
+        "title": "DeployGuard: Scan Current File"
+      },
+      {
+        "command": "deployguard.scanWorkspace",
+        "title": "DeployGuard: Scan Workspace"
+      },
+      {
+        "command": "deployguard.clearDiagnostics",
+        "title": "DeployGuard: Clear All Diagnostics"
+      },
+      {
+        "command": "deployguard.openFindingDetails",
+        "title": "DeployGuard: Open Finding Details"
+      },
+      {
+        "command": "deployguard.markFalsePositive",
+        "title": "DeployGuard: Mark as False Positive"
+      }
+    ],
+
+    "configuration": {
+      "title": "DeployGuard",
+      "properties": {
+        "deployguard.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "Base URL of the DeployGuard API (local dev server or hosted instance)."
+        },
+        "deployguard.apiToken": {
+          "type": "string",
+          "default": "",
+          "description": "API token for authenticated requests. Store in VS Code Secret Storage, not settings.json."
+        },
+        "deployguard.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan the active file when it is saved."
+        },
+        "deployguard.scanOnOpen": {
+          "type": "boolean",
+          "default": false,
+          "description": "Scan a file when it is opened in the editor."
+        },
+        "deployguard.minSeverityToShow": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "info"],
+          "default": "low",
+          "description": "Minimum severity level to show as a diagnostic."
+        },
+        "deployguard.enableInlineDecorations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline severity badges and gutter icons next to flagged lines."
+        },
+        "deployguard.enableQuickFixes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Offer automated quick fixes via the VS Code code action lightbulb."
+        },
+        "deployguard.ignoredRules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Rule IDs to suppress globally (e.g. [\"INF-001\", \"CFG-002\"])."
+        }
+      }
+    },
+
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "deployguard",
+          "title": "DeployGuard",
+          "icon": "assets/sidebar-icon.svg"
+        }
+      ]
+    },
+
+    "views": {
+      "deployguard": [
+        {
+          "id": "deployguard.findingsView",
+          "name": "Findings",
+          "when": "deployguard.hasFindings"
+        },
+        {
+          "id": "deployguard.scoreView",
+          "name": "Deploy Score",
+          "type": "webview"
+        }
+      ]
+    },
+
+    "menus": {
+      "editor/context": [
+        {
+          "command": "deployguard.scanFile",
+          "group": "deployguard",
+          "when": "editorLangId =~ /typescript|javascript|python|go/"
+        }
+      ]
+    },
+
+    "languages": [],
+
+    "diagnosticRelatedInformation": true
+  },
+
+  "scripts": {
+    "compile":  "tsc -p ./tsconfig.json",
+    "bundle":   "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "watch":    "npm run bundle -- --watch",
+    "package":  "vsce package",
+    "test":     "node ./dist/test/runTest.js",
+    "lint":     "eslint src --ext .ts"
+  },
+
+  "dependencies": {},
+
+  "devDependencies": {
+    "@types/node":              "^20.0.0",
+    "@types/vscode":            "^1.85.0",
+    "@vscode/test-electron":    "^2.3.0",
+    "@vscode/vsce":             "^2.22.0",
+    "esbuild":                  "^0.20.0",
+    "typescript":               "^5.3.0"
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id":     "https://deployguard.dev/schemas/ci-report/v1.json",
+  "title":   "DeployGuard CI Report",
+  "description": "The artifact JSON written to disk and uploaded after every CI scan. Consumed by dashboards, audit tools, and the DeployGuard web UI.",
+  "type":    "object",
+
+  "required": ["schemaVersion", "generatedAt", "repository", "commit", "ref", "score", "summary", "findings", "gate"],
+
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Report schema version. Increment when breaking changes are introduced."
+    },
+
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when this report was generated."
+    },
+
+    "repository": {
+      "type": "string",
+      "description": "GitHub repository in owner/repo format.",
+      "example": "acme-corp/api-service"
+    },
+
+    "commit": {
+      "type": "string",
+      "description": "Full SHA of the commit that was scanned.",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+
+    "ref": {
+      "type": "string",
+      "description": "Git ref that triggered the scan (e.g. refs/pull/42/merge)."
+    },
+
+    "scanPath": {
+      "type": "string",
+      "default": ".",
+      "description": "Root path that was scanned, relative to the repository root."
+    },
+
+    "environment": {
+      "type": "string",
+      "enum": ["production", "staging", "development"],
+      "description": "Logical environment label attached to this scan."
+    },
+
+    "score": {
+      "type": "object",
+      "required": ["overall", "security", "performance", "reliability", "compliance", "recommendation"],
+      "properties": {
+        "overall":        { "type": "integer", "minimum": 0, "maximum": 100 },
+        "security":       { "type": "integer", "minimum": 0, "maximum": 100 },
+        "performance":    { "type": "integer", "minimum": 0, "maximum": 100 },
+        "reliability":    { "type": "integer", "minimum": 0, "maximum": 100 },
+        "compliance":     { "type": "integer", "minimum": 0, "maximum": 100 },
+        "recommendation": { "type": "string", "enum": ["deploy", "review", "block"] }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "required": ["total", "critical", "high", "medium", "low", "info", "passed", "failed"],
+      "properties": {
+        "total":    { "type": "integer", "minimum": 0 },
+        "critical": { "type": "integer", "minimum": 0 },
+        "high":     { "type": "integer", "minimum": 0 },
+        "medium":   { "type": "integer", "minimum": 0 },
+        "low":      { "type": "integer", "minimum": 0 },
+        "info":     { "type": "integer", "minimum": 0 },
+        "passed":   { "type": "integer", "minimum": 0 },
+        "failed":   { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "findings": {
+      "type": "array",
+      "description": "All non-false-positive findings from the scan.",
+      "items": {
+        "type": "object",
+        "required": ["id", "ruleId", "title", "severity", "category"],
+        "properties": {
+          "id":           { "type": "string", "format": "uuid" },
+          "ruleId":       { "type": "string", "example": "SEC-001" },
+          "title":        { "type": "string" },
+          "description":  { "type": "string" },
+          "severity":     { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
+          "category":     { "type": "string", "enum": ["security", "secrets", "reliability", "performance", "dependency", "configuration", "compliance"] },
+          "filePath":     { "type": "string" },
+          "lineNumber":   { "type": "integer", "minimum": 1 },
+          "snippet":      { "type": "string" },
+          "remediation":  { "type": "string" },
+          "references":   { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "falsePositive":{ "type": "boolean" }
+        }
+      }
+    },
+
+    "gate": {
+      "type": "object",
+      "required": ["minScore", "blockOn"],
+      "description": "Gate configuration that was active during this scan.",
+      "properties": {
+        "minScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "blockOn":  { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+
+  "additionalProperties": false
+}

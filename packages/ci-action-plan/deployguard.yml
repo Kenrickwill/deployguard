@@ -1,0 +1,125 @@
+# deployguard.yml — Project-level configuration for DeployGuard
+#
+# Place this file at the repository root. The CI action and the local CLI
+# both read it. All fields are optional; missing fields fall back to defaults.
+#
+# Schema version: 1.0
+
+version: "1.0"
+
+# ── Target metadata ───────────────────────────────────────────────────────────
+
+project:
+  name: "my-api-service"
+  environment: "staging"        # staging | production | development
+
+# ── Scan scope ────────────────────────────────────────────────────────────────
+
+scan:
+  # Paths to include (glob patterns, relative to repo root)
+  include:
+    - "src/**/*.ts"
+    - "src/**/*.tsx"
+    - "app/**/*.ts"
+    - "lib/**/*.ts"
+    - "package.json"
+
+  # Paths to exclude (always-excluded: node_modules, .next, dist)
+  exclude:
+    - "**/*.test.ts"
+    - "**/*.spec.ts"
+    - "**/__tests__/**"
+    - "**/__mocks__/**"
+    - "src/generated/**"
+
+  # Skip test files even if matched by include patterns (default: true)
+  skipTestFiles: true
+
+  # Maximum findings per file before the scanner moves on (default: 20)
+  maxFindingsPerFile: 20
+
+# ── Rules ─────────────────────────────────────────────────────────────────────
+
+rules:
+  # Disable specific rules by ID. Useful for suppressing noise on legacy code.
+  disabled:
+    - "INF-001"       # Missing rate-limit headers (not applicable to internal APIs)
+
+  # Override severity for specific rules (useful for project-specific risk tolerance)
+  overrides:
+    - ruleId: "CFG-001"
+      severity: "high"    # Treat Next.js security config as high, not medium
+
+  # Custom rule extensions (future: load from a local plugin file)
+  # plugins:
+  #   - "./deployguard-plugins/custom-rules.ts"
+
+# ── Gate thresholds ───────────────────────────────────────────────────────────
+
+gate:
+  # Minimum overall score to pass CI (0–100)
+  minScore: 70
+
+  # Fail CI immediately if any finding at these severity levels is present
+  blockOn:
+    - critical
+    - high
+
+  # Allow workflow to pass if the only new findings are below this severity
+  # (requires a base branch scan to compare against)
+  warnOnly:
+    - medium
+    - low
+    - info
+
+# ── Reporting ─────────────────────────────────────────────────────────────────
+
+report:
+  # Formats to generate (json | markdown | html | csv | sarif)
+  formats:
+    - html
+    - sarif
+
+  # Include code snippets in reports (may expose sensitive code in artifacts)
+  includeSnippets: true
+
+  # Include remediation guidance in reports
+  includeRemediation: true
+
+  # Upload reports as GitHub Actions artifacts
+  uploadArtifact: true
+
+  # Post findings as a PR comment
+  postPRComment: true
+
+  # Upload SARIF to GitHub Code Scanning
+  uploadSarif: true
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+notifications:
+  # Slack webhook — post a summary when score drops below gate.minScore
+  # slack:
+  #   webhookUrl: "${{ secrets.SLACK_WEBHOOK }}"
+  #   channel: "#security-alerts"
+  #   notifyOn: ["block", "review"]
+
+  # Email notification (future feature)
+  # email:
+  #   recipients: ["security@company.com"]
+  #   notifyOn: ["block"]
+
+# ── False positives ───────────────────────────────────────────────────────────
+
+falsePositives:
+  # Suppress specific findings by their stable fingerprint.
+  # Generate fingerprints with: deployguard fingerprint <file>
+  - fingerprint: "SEC-001:src/lib/test-helpers.ts:12"
+    reason: "Test fixture — not real credentials"
+    addedBy: "jane@company.com"
+    addedAt: "2025-01-15"
+
+  - fingerprint: "SEC-006:next.config.ts:8"
+    reason: "Debug flag is behind NODE_ENV check, safe in production"
+    addedBy: "team"
+    addedAt: "2025-02-01"

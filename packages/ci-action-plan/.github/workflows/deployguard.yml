@@ -1,0 +1,152 @@
+# .github/workflows/deployguard.yml
+#
+# DeployGuard security scan workflow.
+# Runs on every pull request and on pushes to main.
+#
+# Required secrets:
+#   DEPLOYGUARD_API_URL   — base URL of your DeployGuard instance
+#   DEPLOYGUARD_TOKEN     — API authentication token
+#
+# Required permissions (set at workflow or job level):
+#   contents:        read    — checkout
+#   pull-requests:   write   — PR comment
+#   security-events: write   — SARIF upload to Code Scanning
+
+name: DeployGuard
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - "src/**"
+      - "app/**"
+      - "lib/**"
+      - "packages/**"
+      - "package.json"
+      - "deployguard.yml"
+
+  push:
+    branches: [main, master]
+
+  # Allow manual runs from the Actions tab
+  workflow_dispatch:
+    inputs:
+      scan-path:
+        description: "Path to scan (default: full repo)"
+        required: false
+        default: "."
+      min-score:
+        description: "Minimum score to pass (0–100)"
+        required: false
+        default: "70"
+
+# Cancel in-progress scans when a newer commit is pushed to the same PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents:        read
+  pull-requests:   write
+  security-events: write
+  actions:         read
+
+jobs:
+  # ── Job 1: Security Scan ────────────────────────────────────────────────────
+  security-scan:
+    name: DeployGuard Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    outputs:
+      score:          ${{ steps.scan.outputs.score }}
+      recommendation: ${{ steps.scan.outputs.recommendation }}
+      passed:         ${{ steps.scan.outputs.passed }}
+      critical-count: ${{ steps.scan.outputs.critical-count }}
+      high-count:     ${{ steps.scan.outputs.high-count }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # Full history for base-branch diff
+
+      - name: Run DeployGuard Scan
+        id: scan
+        uses: your-org/deployguard-action@v1
+        with:
+          api-url:          ${{ secrets.DEPLOYGUARD_API_URL }}
+          api-token:        ${{ secrets.DEPLOYGUARD_TOKEN }}
+          scan-path:        ${{ github.event.inputs.scan-path || '.' }}
+          config-file:      deployguard.yml
+          min-score:        ${{ github.event.inputs.min-score || '70' }}
+          block-on:         "critical,high"
+          post-pr-comment:  ${{ github.event_name == 'pull_request' }}
+          upload-sarif:     true
+          report-format:    html
+          environment:      ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()    # Upload even if the scan gate failed
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ runner.temp }}/deployguard.sarif
+          category:   deployguard
+
+      - name: Upload HTML Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name:              deployguard-report-${{ github.run_number }}
+          path:              ${{ runner.temp }}/deployguard-report.json
+          retention-days:    30
+
+      - name: Print Gate Summary
+        if: always()
+        run: |
+          echo "## DeployGuard Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Score** | ${{ steps.scan.outputs.score }}/100 |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Recommendation** | ${{ steps.scan.outputs.recommendation }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Critical** | ${{ steps.scan.outputs.critical-count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **High** | ${{ steps.scan.outputs.high-count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Gate** | ${{ steps.scan.outputs.passed == 'true' && '✅ Passed' || '🚫 Failed' }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ── Job 2: Score history (main branch only) ─────────────────────────────────
+  record-score:
+    name: Record Score Trend
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Post score to DeployGuard dashboard
+        run: |
+          curl -s -X POST "${{ secrets.DEPLOYGUARD_API_URL }}/api/scores/record" \
+            -H "Authorization: Bearer ${{ secrets.DEPLOYGUARD_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "score":          ${{ needs.security-scan.outputs.score }},
+              "recommendation": "${{ needs.security-scan.outputs.recommendation }}",
+              "commit":         "${{ github.sha }}",
+              "ref":            "${{ github.ref }}",
+              "repository":     "${{ github.repository }}"
+            }'
+
+  # ── Job 3: Enforce gate on PRs ──────────────────────────────────────────────
+  enforce-gate:
+    name: Enforce Deployment Gate
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Check gate result
+        run: |
+          if [ "${{ needs.security-scan.outputs.passed }}" != "true" ]; then
+            echo "::error::DeployGuard gate failed. Score: ${{ needs.security-scan.outputs.score }}/100, Critical: ${{ needs.security-scan.outputs.critical-count }}, High: ${{ needs.security-scan.outputs.high-count }}"
+            exit 1
+          fi
+          echo "Gate passed. Score: ${{ needs.security-scan.outputs.score }}/100"

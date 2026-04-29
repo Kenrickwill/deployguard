@@ -1,0 +1,46 @@
+{
+  "$schema": "https://deployguard.dev/schemas/finding/v1.json",
+  "_comment": "Canonical finding shape consumed by the VS Code extension, CI action, and web UI.",
+
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "ruleId": "SEC-001",
+  "title": "Hardcoded API Secret",
+  "description": "A secret or credential appears to be hardcoded directly in source code. Hardcoded secrets are permanently exposed once committed, even if later removed, because version control history preserves every change.",
+  "severity": "critical",
+  "category": "secrets",
+
+  "location": {
+    "filePath": "src/lib/stripe.ts",
+    "lineStart": 4,
+    "lineEnd": 4,
+    "columnStart": 22,
+    "columnEnd": 50,
+    "snippet": "const client = new Stripe(\"sk_live_abc123REDACTED\");"
+  },
+
+  "remediation": "Move the secret to an environment variable. Rotate the exposed credential immediately — treat it as compromised.",
+
+  "fix": {
+    "description": "Replace hardcoded secret with process.env lookup",
+    "edits": [
+      {
+        "filePath": "src/lib/stripe.ts",
+        "line": 4,
+        "oldText": "const client = new Stripe(\"sk_live_abc123REDACTED\");",
+        "newText": "const client = new Stripe(process.env.STRIPE_SECRET_KEY!);"
+      }
+    ],
+    "sideEffects": [
+      "Add STRIPE_SECRET_KEY to .env.example",
+      "Add STRIPE_SECRET_KEY to CI/CD secrets"
+    ]
+  },
+
+  "references": [
+    "https://cwe.mitre.org/data/definitions/798.html",
+    "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+  ],
+
+  "falsePositive": false,
+  "fingerprint": "sec001:src/lib/stripe.ts:4:sha256:a3f8..."
+}

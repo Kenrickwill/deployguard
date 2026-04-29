@@ -1,0 +1,134 @@
+name: "DeployGuard Security Scan"
+description: >
+  Runs DeployGuard static analysis against your codebase, posts findings as a
+  PR comment, and optionally blocks the workflow when score or severity
+  thresholds are not met.
+
+author: "DeployGuard"
+
+branding:
+  icon:  "shield"
+  color: "blue"
+
+# ── Inputs ────────────────────────────────────────────────────────────────────
+
+inputs:
+
+  api-url:
+    description: >
+      Base URL of the DeployGuard API. Use your self-hosted instance or the
+      hosted service. Do not include a trailing slash.
+    required: true
+
+  api-token:
+    description: >
+      Authentication token. Store as a repository/organization secret and
+      reference with ${{ secrets.DEPLOYGUARD_TOKEN }}.
+    required: true
+
+  scan-path:
+    description: >
+      Path to scan relative to the repository root. Defaults to the entire
+      workspace. Use "src" or "app/api" to narrow scope.
+    required: false
+    default: "."
+
+  config-file:
+    description: >
+      Path to a deployguard.yml configuration file. If omitted, the action
+      looks for deployguard.yml at the repository root, then uses defaults.
+    required: false
+    default: "deployguard.yml"
+
+  min-score:
+    description: >
+      Minimum overall deploy score (0–100) required to pass. Workflow fails
+      if the score is below this threshold.
+    required: false
+    default: "60"
+
+  block-on:
+    description: >
+      Comma-separated list of severity levels that cause immediate failure
+      regardless of the overall score (e.g. "critical,high").
+    required: false
+    default: "critical"
+
+  fail-on-new-findings:
+    description: >
+      If true, fail only when the scan introduces NEW findings not present on
+      the base branch. Requires a base-ref scan to compare against.
+    required: false
+    default: "false"
+
+  post-pr-comment:
+    description: >
+      Post a formatted findings summary as a PR comment. Requires the
+      GITHUB_TOKEN to have pull-requests: write permission.
+    required: false
+    default: "true"
+
+  upload-sarif:
+    description: >
+      Upload a SARIF report to GitHub Code Scanning after the scan completes.
+      Requires the security-events: write permission.
+    required: false
+    default: "true"
+
+  environment:
+    description: >
+      Logical environment label attached to the scan result (staging,
+      production, development). Used for report context only.
+    required: false
+    default: "staging"
+
+  enabled-rules:
+    description: >
+      Comma-separated list of rule IDs to enable. If empty, all rules run.
+    required: false
+    default: ""
+
+  disabled-rules:
+    description: >
+      Comma-separated list of rule IDs to suppress (e.g. "INF-001,CFG-002").
+    required: false
+    default: ""
+
+  report-format:
+    description: >
+      Format of the artifact report uploaded to GitHub Actions artifacts.
+      One of: json, markdown, html, sarif.
+    required: false
+    default: "html"
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+
+outputs:
+
+  score:
+    description: "Overall deploy score (0–100)."
+
+  recommendation:
+    description: "One of: deploy, review, block."
+
+  critical-count:
+    description: "Number of critical-severity findings."
+
+  high-count:
+    description: "Number of high-severity findings."
+
+  total-findings:
+    description: "Total number of non-false-positive findings."
+
+  report-url:
+    description: "URL of the uploaded HTML report artifact (if generated)."
+
+  passed:
+    description: "'true' if all gate conditions were met, 'false' otherwise."
+
+# ── Implementation ────────────────────────────────────────────────────────────
+
+runs:
+  using: "node20"
+  main:  "dist/main.js"
+  post:  "dist/post.js"    # cleanup step: removes temp files
