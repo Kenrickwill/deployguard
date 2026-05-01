@@ -3,6 +3,8 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 import { runDynamicTest } from "@/lib/dynamic-testing";
 import type { ProbeResult } from "@/lib/dynamic-testing";
+import { validateApiKey } from "@/lib/auth/api-key";
+import prisma from "@/lib/db/client";
 import type { ApiResponse } from "@/types/api";
 import type { DynamicTestEntry, DynamicTestSession } from "@/types";
 
@@ -70,6 +72,12 @@ function probeToEntry(probe: ProbeResult, targetUrl: string, responseTimeMs: num
 export async function POST(
   req: NextRequest,
 ): Promise<NextResponse<ApiResponse<DynamicTestSession>>> {
+  // API key validation (no-op in dev when DB is unavailable)
+  const auth = await validateApiKey(req, "scan:write");
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: 401 });
+  }
+
   // Parse + validate body
   let body: z.infer<typeof RunRequestSchema>;
   try {
@@ -120,6 +128,37 @@ export async function POST(
       entries,
       findings:       result.findings,
     };
+
+    // ── Persist to database (best-effort) ──────────────────────────────────────
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = prisma as any;
+      const vulnEntries = entries.filter(e => e.vulnerable);
+      await db.sandboxJob.create({
+        data: {
+          targetUrl:   body.targetUrl,
+          status:      "COMPLETED",
+          startedAt:   new Date(result.probedAt),
+          completedAt: new Date(),
+        },
+      });
+      // Audit log
+      void db.auditLog.create({
+        data: {
+          actor:      auth.userId ?? body.authorizedBy,
+          action:     "dynamic_test.run",
+          resource:   "DynamicTest",
+          resourceId: session.id,
+          metadata:   {
+            targetUrl:     body.targetUrl,
+            probesRun:     entries.length,
+            vulnerabilities: vulnEntries.length,
+          },
+        },
+      }).catch(() => { /* non-critical */ });
+    } catch {
+      // DB write failure is non-fatal
+    }
 
     return NextResponse.json({ data: session });
   } catch (err) {

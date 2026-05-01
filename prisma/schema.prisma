@@ -14,8 +14,9 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  projects Project[]
-  scans    Scan[]
+  projects   Project[]
+  scans      Scan[]
+  apiTokens  ApiToken[]
 }
 
 enum Role {
@@ -38,32 +39,48 @@ model Project {
 
   scans        Scan[]
   integrations Integration[]
+  apiTokens    ApiToken[]
+  webhooks     Webhook[]
 
   @@index([slug])
   @@index([ownerId])
 }
 
 model Scan {
-  id          String      @id @default(cuid())
-  projectId   String
-  project     Project     @relation(fields: [projectId], references: [id])
-  userId      String?
-  user        User?       @relation(fields: [userId], references: [id])
-  branch      String?
-  commitSha   String?
-  environment Environment @default(STAGING)
-  status      ScanStatus  @default(PENDING)
-  startedAt   DateTime    @default(now())
-  completedAt DateTime?
-  scoreJson   Json?
-  summaryJson Json?
-  createdAt   DateTime    @default(now())
+  id               String      @id @default(cuid())
+  projectId        String
+  project          Project     @relation(fields: [projectId], references: [id])
+  userId           String?
+  user             User?       @relation(fields: [userId], references: [id])
+  branch           String?
+  commitSha        String?
+  triggerSource    TriggerSource @default(MANUAL)
+  triggeredBy      String?     // actor: user email, bot name, or "ci"
+  rawResultsUrl    String?     // optional blob/S3 URL for large result payloads
+  normalizedScore  Int?        // 0-100 integer for quick sorting/filtering
+  environment      Environment @default(STAGING)
+  status           ScanStatus  @default(PENDING)
+  startedAt        DateTime    @default(now())
+  completedAt      DateTime?
+  scoreJson        Json?
+  summaryJson      Json?
+  createdAt        DateTime    @default(now())
 
-  findings Finding[]
-  reports  Report[]
+  findings  Finding[]
+  reports   Report[]
+  cicdRuns  CicdRun[]
 
   @@index([projectId])
   @@index([status])
+  @@index([triggerSource])
+}
+
+enum TriggerSource {
+  MANUAL
+  CLI
+  GITHUB_ACTIONS
+  GITLAB_CI
+  API
 }
 
 enum Environment {
@@ -80,26 +97,51 @@ enum ScanStatus {
 }
 
 model Finding {
-  id            String          @id @default(cuid())
-  scanId        String
-  scan          Scan            @relation(fields: [scanId], references: [id])
-  ruleId        String
-  title         String
-  description   String
-  severity      Severity
-  category      FindingCategory
-  filePath      String?
-  lineNumber    Int?
-  snippet       String?
-  remediation   String?
-  references    String[]
-  falsePositive Boolean         @default(false)
-  notes         String?
-  createdAt     DateTime        @default(now())
+  id              String          @id @default(cuid())
+  scanId          String
+  scan            Scan            @relation(fields: [scanId], references: [id])
+  ruleId          String
+  title           String
+  description     String
+  severity        Severity
+  category        FindingCategory
+  status          FindingStatus   @default(OPEN)
+  confidence      Int             @default(100) // 0-100 — how certain the rule engine is
+  exploitability  Int             @default(50)  // 0-100 — estimated ease of exploit
+  businessImpact  Int             @default(50)  // 0-100 — estimated blast radius
+  fixDifficulty   FixDifficulty   @default(MEDIUM)
+  filePath        String?
+  lineNumber      Int?
+  snippet         String?
+  remediation     String?
+  references      String[]
+  falsePositive   Boolean         @default(false)
+  notes           String?
+  createdAt       DateTime        @default(now())
+
+  remediationSuggestions RemediationSuggestion[]
 
   @@index([scanId])
   @@index([severity])
   @@index([category])
+  @@index([status])
+}
+
+enum FindingStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  WONT_FIX
+  FALSE_POSITIVE
+}
+
+enum FixDifficulty {
+  TRIVIAL
+  EASY
+  MEDIUM
+  HARD
+  VERY_HARD
 }
 
 enum Severity {
@@ -174,4 +216,183 @@ model ScanRule {
   references  String[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+}
+
+// ─── Phase 2 additions ───────────────────────────────────────────────────────
+
+/// API key issued to a project or user for programmatic / CI access.
+model ApiToken {
+  id          String    @id @default(cuid())
+  name        String                        // human label e.g. "GitHub Actions prod"
+  keyHash     String    @unique             // bcrypt / SHA-256 hash of the raw key
+  prefix      String                        // first 8 chars shown in UI  e.g. "dg_live_"
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id])
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+  scopes      String[]                      // ["scan:write","report:read"]
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([prefix])
+}
+
+/// One execution of the CI/CD action against a scan.
+model CicdRun {
+  id           String     @id @default(cuid())
+  scanId       String
+  scan         Scan       @relation(fields: [scanId], references: [id])
+  provider     CiProvider
+  runUrl       String?                       // link to the CI job
+  prNumber     Int?
+  prCommentId  String?                       // GitHub comment node-id for upsert
+  sarifUploaded Boolean   @default(false)
+  gateResult   GateResult
+  gateReason   String?
+  createdAt    DateTime   @default(now())
+
+  @@index([scanId])
+}
+
+enum CiProvider {
+  GITHUB_ACTIONS
+  GITLAB_CI
+  CIRCLE_CI
+  JENKINS
+  BITBUCKET_PIPELINES
+}
+
+enum GateResult {
+  PASS
+  WARN
+  FAIL
+}
+
+/// Ephemeral container sandbox spun up for DAST against a real branch build.
+model SandboxJob {
+  id           String      @id @default(cuid())
+  scanId       String?                        // linked scan if DAST was chained
+  targetUrl    String                         // URL inside the container
+  imageRef     String?                        // Docker image used
+  provider     String      @default("fly.io")
+  status       SandboxStatus @default(PENDING)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  logUrl       String?
+  error        String?
+  createdAt    DateTime    @default(now())
+
+  @@index([status])
+}
+
+enum SandboxStatus {
+  PENDING
+  PROVISIONING
+  RUNNING
+  COMPLETED
+  FAILED
+  TIMED_OUT
+}
+
+/// AI-generated remediation suggestions tied to a specific finding.
+model RemediationSuggestion {
+  id           String   @id @default(cuid())
+  findingId    String
+  finding      Finding  @relation(fields: [findingId], references: [id])
+  model        String                          // e.g. "claude-3-5-sonnet-20241022"
+  prompt       String                          // stored for audit / replay
+  suggestion   String   @db.Text
+  confidence   Int      @default(75)           // 0-100
+  accepted     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  remediationPrs RemediationPr[]
+
+  @@index([findingId])
+}
+
+/// Pull-request opened by DeployGuard with an automated fix.
+model RemediationPr {
+  id               String    @id @default(cuid())
+  suggestionId     String
+  suggestion       RemediationSuggestion @relation(fields: [suggestionId], references: [id])
+  repoFullName     String                // "owner/repo"
+  prNumber         Int?
+  prUrl            String?
+  branch           String?
+  status           PrStatus  @default(PENDING)
+  mergedAt         DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([suggestionId])
+}
+
+enum PrStatus {
+  PENDING
+  OPEN
+  MERGED
+  CLOSED
+  FAILED
+}
+
+/// Explicit human approval required before deploying to a guarded environment.
+model SecureDeployApproval {
+  id          String         @id @default(cuid())
+  scanId      String
+  environment Environment
+  requestedBy String                        // user email or "ci"
+  approvedBy  String?
+  status      ApprovalStatus @default(PENDING)
+  expiresAt   DateTime?
+  notes       String?
+  createdAt   DateTime       @default(now())
+  resolvedAt  DateTime?
+
+  @@index([scanId])
+  @@index([status])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+/// Append-only audit log for security-relevant events.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actor      String                // user email, token prefix, or "system"
+  action     String                // e.g. "scan.create", "token.revoke", "approval.approve"
+  resourceId String?               // cuid of the affected resource
+  resource   String?               // e.g. "Scan", "ApiToken"
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actor])
+  @@index([action])
+  @@index([createdAt])
+}
+
+/// Outbound webhook subscriptions.
+model Webhook {
+  id          String        @id @default(cuid())
+  projectId   String
+  project     Project       @relation(fields: [projectId], references: [id])
+  url         String
+  secret      String                           // HMAC signing secret (stored hashed)
+  events      String[]                         // ["scan.completed","finding.critical"]
+  enabled     Boolean       @default(true)
+  lastStatus  Int?                             // last HTTP status from delivery
+  lastSentAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([projectId])
 }

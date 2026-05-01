@@ -3,6 +3,8 @@ import { z } from "zod";
 import { scanSnippet, runScan } from "@/lib/scanner";
 import { generateReport } from "@/lib/reporting";
 import { generateScanDocumentation } from "@/lib/documentation";
+import { validateApiKey } from "@/lib/auth/api-key";
+import prisma from "@/lib/db/client";
 import type { ApiResponse } from "@/types/api";
 import type { ScanResult } from "@/types";
 
@@ -28,6 +30,12 @@ const AnalyzeRequestSchema = z.object({
   disabledRuleIds:   z.array(z.string()).optional(),
   skipTestFiles:     z.boolean().optional(),
   maxFindingsPerFile: z.number().int().positive().optional(),
+  /** Optional project ID to associate the scan with. */
+  projectId: z.string().optional(),
+  /** CI trigger metadata */
+  triggerSource: z.enum(["MANUAL", "CLI", "GITHUB_ACTIONS", "GITLAB_CI", "API"]).optional(),
+  commitSha:     z.string().optional(),
+  branch:        z.string().optional(),
 });
 
 type AnalyzeRequest = z.infer<typeof AnalyzeRequestSchema>;
@@ -38,11 +46,38 @@ interface AnalyzeResponse {
   scan:          ScanResult;
   report?:       string;
   documentation?: ReturnType<typeof generateScanDocumentation>;
+  /** Persisted DB scan id, if the database is connected. */
+  dbScanId?: string;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Severity string → Prisma enum value */
+function toSeverityEnum(s: string): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO" {
+  const map: Record<string, "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO"> = {
+    critical: "CRITICAL", high: "HIGH", medium: "MEDIUM", low: "LOW", info: "INFO",
+  };
+  return map[s.toLowerCase()] ?? "INFO";
+}
+
+/** Category string → Prisma enum value */
+function toCategoryEnum(c: string): "SECURITY" | "PERFORMANCE" | "RELIABILITY" | "DEPENDENCY" | "CONFIGURATION" | "SECRETS" | "COMPLIANCE" {
+  const map: Record<string, "SECURITY" | "PERFORMANCE" | "RELIABILITY" | "DEPENDENCY" | "CONFIGURATION" | "SECRETS" | "COMPLIANCE"> = {
+    security: "SECURITY", performance: "PERFORMANCE", reliability: "RELIABILITY",
+    dependency: "DEPENDENCY", configuration: "CONFIGURATION", secrets: "SECRETS", compliance: "COMPLIANCE",
+  };
+  return map[c.toLowerCase()] ?? "SECURITY";
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse<AnalyzeResponse>>> {
+  // API key validation (no-op in dev when DB is unavailable)
+  const auth = await validateApiKey(req, "scan:write");
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: 401 });
+  }
+
   let body: AnalyzeRequest;
   try {
     const raw = await req.json();
@@ -93,7 +128,55 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse<A
 
     const documentation = generateScanDocumentation(scan, body.filePath ?? "Uploaded Code");
 
-    return NextResponse.json({ data: { scan, report, documentation } });
+    // ── Persist to database (best-effort — skip if DB not connected) ──────────
+    let dbScanId: string | undefined;
+
+    if (body.projectId) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const db = prisma as any;
+        const dbScan = await db.scan.create({
+          data: {
+            projectId:       body.projectId,
+            userId:          auth.userId ?? undefined,
+            branch:          body.branch,
+            commitSha:       body.commitSha,
+            triggerSource:   body.triggerSource ?? "MANUAL",
+            triggeredBy:     auth.userId ?? "anonymous",
+            environment:     "STAGING",
+            status:          "COMPLETED",
+            completedAt:     new Date(),
+            normalizedScore: scan.score?.overall ?? null,
+            scoreJson:       (scan.score as object) ?? undefined,
+            summaryJson:     {
+              totalFindings:    scan.findings.length,
+              criticalCount:    scan.findings.filter(f => f.severity === "critical").length,
+              highCount:        scan.findings.filter(f => f.severity === "high").length,
+            },
+            findings: {
+              create: scan.findings.map(f => ({
+                ruleId:      f.ruleId,
+                title:       f.title,
+                description: f.description,
+                severity:    toSeverityEnum(f.severity),
+                category:    toCategoryEnum(f.category),
+                filePath:    f.filePath,
+                lineNumber:  f.lineNumber,
+                snippet:     f.snippet,
+                remediation: f.remediation,
+                references:  f.references ?? [],
+              })),
+            },
+          },
+        });
+        dbScanId = dbScan.id;
+      } catch (dbErr) {
+        // DB write failure is non-fatal — we still return the scan result
+        console.warn("[analyze] DB write failed (non-fatal):", dbErr);
+      }
+    }
+
+    return NextResponse.json({ data: { scan, report, documentation, dbScanId } });
   } catch (err) {
     console.error("[analyze] scan failed", err);
     return NextResponse.json({ error: "Scan failed. Check your input and try again." }, { status: 500 });
@@ -105,6 +188,16 @@ export function GET(): NextResponse {
   return NextResponse.json({
     endpoint: "/api/scan/analyze",
     methods:  ["POST"],
-    accepts:  "{ snippet?: string, filePath?: string, files?: FileInput[], reportFormat?: 'json'|'markdown'|'html'|'csv' }",
+    accepts:  {
+      snippet:       "string",
+      filePath:      "string",
+      files:         "FileInput[]",
+      reportFormat:  "'json'|'markdown'|'html'|'csv'",
+      projectId:     "string (optional — persists to DB)",
+      triggerSource: "'MANUAL'|'CLI'|'GITHUB_ACTIONS'|'GITLAB_CI'|'API'",
+      commitSha:     "string",
+      branch:        "string",
+    },
+    auth: "Bearer <dg_live_*> or X-DeployGuard-Key header",
   });
 }
