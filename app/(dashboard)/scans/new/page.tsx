@@ -22,6 +22,7 @@ type ScanPhase  = "idle" | "scanning" | "done" | "error";
 
 const EXTENSIONS = [
   ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+  ".html", ".htm",
   ".py", ".go", ".rb", ".java", ".cs", ".php",
   "package.json", "next.config.ts", "next.config.js",
   ".env", "Dockerfile", "other",
@@ -262,7 +263,7 @@ export default function NewScanPage() {
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept=".ts,.tsx,.js,.jsx,.py,.go,.rb,.java,.cs,.php,.json,.env,.dockerfile"
+                  accept=".ts,.tsx,.js,.jsx,.mjs,.cjs,.html,.htm,.py,.go,.rb,.java,.cs,.php,.json,.env,.dockerfile"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
@@ -275,7 +276,7 @@ export default function NewScanPage() {
                     <Upload className="h-8 w-8 opacity-40" />
                     <div className="text-center">
                       <p className="text-sm font-medium">Drop files here or click to browse</p>
-                      <p className="text-xs text-muted-foreground mt-1">.ts · .tsx · .js · .py · .go · .json · and more</p>
+                      <p className="text-xs text-muted-foreground mt-1">.ts · .tsx · .js · .html · .py · .go · .json · and more</p>
                     </div>
                   </button>
                 ) : (

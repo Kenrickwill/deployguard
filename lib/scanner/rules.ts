@@ -622,6 +622,194 @@ export const RULES: Rule[] = [
     },
   },
 
+  // ── HTML-001 · Inline event handlers ─────────────────────────────────────
+
+  {
+    id: "HTML-001",
+    title: "Inline event handler — potential XSS vector",
+    description:
+      "An HTML element uses an inline event handler (onclick, onload, onerror, etc.). " +
+      "If any part of the attribute value is derived from user input or an external source, " +
+      "this is a direct cross-site scripting (XSS) vector. Even when values are static, " +
+      "inline handlers bypass Content-Security-Policy directives that block inline scripts.",
+    severity: "high",
+    category: "security",
+    remediation:
+      "Remove all inline event handlers and attach behaviour via addEventListener() in " +
+      "a separate <script> file. Set a strict Content-Security-Policy that omits " +
+      "'unsafe-inline' to prevent inline script execution at the browser level.",
+    references: [
+      "https://owasp.org/www-community/attacks/xss/",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
+      "https://cwe.mitre.org/data/definitions/79.html",
+    ],
+    cwe: "CWE-79",
+    owasp: "A03:2021",
+    check(ctx) {
+      if (ctx.extension !== "html" && ctx.extension !== "htm") return [];
+      return matchLines(
+        ctx.lines,
+        /\bon(?:click|load|error|mouseover|mouseout|submit|focus|blur|change|keyup|keydown|keypress|input|dblclick|contextmenu|resize|scroll)\s*=\s*["']?[^"'>]{1,}/i,
+      );
+    },
+  },
+
+  // ── HTML-002 · javascript: URL protocol ──────────────────────────────────
+
+  {
+    id: "HTML-002",
+    title: "javascript: URL protocol — direct XSS vector",
+    description:
+      "A href, src, or action attribute uses the javascript: URL scheme. " +
+      "Browsers execute the JavaScript expression when the user interacts with the element, " +
+      "making this a reliable cross-site scripting vector that is trivially exploitable " +
+      "if any part of the URL is attacker-controlled.",
+    severity: "critical",
+    category: "security",
+    remediation:
+      "Replace javascript: URLs with real href targets or button elements with " +
+      "addEventListener(). Never construct href or action values from user input. " +
+      "Enable a Content-Security-Policy that prohibits javascript: URIs.",
+    references: [
+      "https://owasp.org/www-community/attacks/xss/",
+      "https://cwe.mitre.org/data/definitions/79.html",
+    ],
+    cwe: "CWE-79",
+    owasp: "A03:2021",
+    check(ctx) {
+      if (ctx.extension !== "html" && ctx.extension !== "htm") return [];
+      return matchLines(
+        ctx.lines,
+        /(?:href|src|action)\s*=\s*["']?\s*javascript\s*:/i,
+      );
+    },
+  },
+
+  // ── HTML-003 · target="_blank" without noopener ───────────────────────────
+
+  {
+    id: "HTML-003",
+    title: "target=\"_blank\" without rel=\"noopener noreferrer\"",
+    description:
+      "A link or form uses target=\"_blank\" but is missing rel=\"noopener noreferrer\". " +
+      "The opened page gains a reference to the opener via window.opener and can " +
+      "redirect it to a phishing page (reverse tabnapping). This is a well-documented " +
+      "social engineering vector used in the wild.",
+    severity: "medium",
+    category: "security",
+    remediation:
+      "Add rel=\"noopener noreferrer\" to every element that uses target=\"_blank\". " +
+      "Example: <a href=\"...\" target=\"_blank\" rel=\"noopener noreferrer\">",
+    references: [
+      "https://owasp.org/www-community/attacks/Reverse_Tabnabbing",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/rel/noopener",
+      "https://cwe.mitre.org/data/definitions/1022.html",
+    ],
+    cwe: "CWE-1022",
+    owasp: "A05:2021",
+    check(ctx) {
+      if (ctx.extension !== "html" && ctx.extension !== "htm") return [];
+      // Flag lines with target="_blank" that don't also contain noopener
+      return ctx.lines.reduce<RuleMatch[]>((acc, line, i) => {
+        if (/target\s*=\s*["']_blank["']/i.test(line) && !/noopener/i.test(line)) {
+          acc.push({ lineNumber: i + 1, snippet: line.trim().slice(0, 300) });
+        }
+        return acc;
+      }, []);
+    },
+  },
+
+  // ── HTML-004 · External script over HTTP ──────────────────────────────────
+
+  {
+    id: "HTML-004",
+    title: "External script loaded over HTTP (not HTTPS)",
+    description:
+      "A <script> tag loads an external resource over HTTP. Because HTTP traffic " +
+      "is unencrypted, a network attacker can intercept the response and inject " +
+      "arbitrary JavaScript that executes with full page privileges — a classic " +
+      "man-in-the-middle script injection.",
+    severity: "high",
+    category: "security",
+    remediation:
+      "Change the src URL to use https://. If the CDN or vendor does not offer " +
+      "HTTPS, switch to a provider that does. Consider using Subresource Integrity " +
+      "(integrity + crossorigin attributes) to verify the script has not been tampered with.",
+    references: [
+      "https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity",
+      "https://cwe.mitre.org/data/definitions/319.html",
+    ],
+    cwe: "CWE-319",
+    owasp: "A02:2021",
+    check(ctx) {
+      if (ctx.extension !== "html" && ctx.extension !== "htm") return [];
+      return matchLines(
+        ctx.lines,
+        /<script[^>]+src\s*=\s*["']http:\/\/(?!localhost|127\.0\.0\.1)/i,
+      );
+    },
+  },
+
+  // ── HTML-005 · Form submits to HTTP endpoint ──────────────────────────────
+
+  {
+    id: "HTML-005",
+    title: "Form submits data over plaintext HTTP",
+    description:
+      "A <form> element's action attribute points to an http:// URL. " +
+      "All field values — including passwords, tokens, and personal data — " +
+      "are transmitted in cleartext and can be intercepted by any network observer.",
+    severity: "high",
+    category: "security",
+    remediation:
+      "Change the form action to use https://. Ensure the server enforces HTTPS " +
+      "and issues an HSTS header (Strict-Transport-Security) to prevent future " +
+      "downgrade attacks.",
+    references: [
+      "https://owasp.org/www-community/controls/Transport_Layer_Protection_Cheat_Sheet",
+      "https://cwe.mitre.org/data/definitions/319.html",
+    ],
+    cwe: "CWE-319",
+    owasp: "A02:2021",
+    check(ctx) {
+      if (ctx.extension !== "html" && ctx.extension !== "htm") return [];
+      return matchLines(
+        ctx.lines,
+        /<form[^>]+action\s*=\s*["']http:\/\/(?!localhost|127\.0\.0\.1)/i,
+      );
+    },
+  },
+
+  // ── HTML-006 · Missing Content-Security-Policy meta tag ──────────────────
+
+  {
+    id: "HTML-006",
+    title: "No Content-Security-Policy meta tag",
+    description:
+      "The HTML file does not contain a Content-Security-Policy meta tag. " +
+      "Without a CSP, browsers will execute any inline script and load resources " +
+      "from any origin, making reflected and stored XSS attacks far easier to exploit.",
+    severity: "medium",
+    category: "configuration",
+    remediation:
+      "Add a CSP meta tag to the <head>: " +
+      "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self'; ...\">. " +
+      "Start with a report-only policy, tune it with your actual resource origins, " +
+      "then switch to enforcement mode. Avoid 'unsafe-inline' and 'unsafe-eval'.",
+    references: [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
+      "https://csp.withgoogle.com/docs/strict-csp.html",
+    ],
+    owasp: "A05:2021",
+    check(ctx) {
+      if (ctx.extension !== "html" && ctx.extension !== "htm") return [];
+      // Only flag if the file looks like a full HTML document (has <head>)
+      if (!/\<head\b/i.test(ctx.content)) return [];
+      if (/http-equiv\s*=\s*["']Content-Security-Policy["']/i.test(ctx.content)) return [];
+      return [{ lineNumber: 1, snippet: ctx.lines[0]?.trim() ?? "", message: "No CSP meta tag found in <head>." }];
+    },
+  },
+
   // ── INF-001 · TODO/FIXME security notes ──────────────────────────────────
 
   {
