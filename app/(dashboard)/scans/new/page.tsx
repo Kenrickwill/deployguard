@@ -48,6 +48,16 @@ const REC_CFG = {
   block:  { label: "BLOCK",   Icon: XCircle,      cls: "text-red-400 border-red-400/30 bg-red-400/8" },
 };
 
+/** Detect the likely file extension from pasted content so HTML rules fire correctly. */
+function detectExt(code: string, fallback = ".ts"): string {
+  const t = code.trimStart();
+  if (/^<!DOCTYPE\s+html|^<html\b/i.test(t)) return ".html";
+  if (/^\{\s*[\s\S]*"(?:name|version|dependencies)"\s*:/m.test(t)) return ".json";
+  if (/^FROM\s+\w|^RUN\s+|^EXPOSE\s+\d/m.test(t)) return "Dockerfile";
+  if (/^def\s+\w+\s*\(|^import\s+\w+$|^#\s*!.*python/m.test(t)) return ".py";
+  return fallback;
+}
+
 const SEV_CLS: Record<string, string> = {
   critical: "text-red-400",
   high:     "text-orange-400",
@@ -94,7 +104,8 @@ export default function NewScanPage() {
   }
 
   async function runScan() {
-    const filePath = tab === "paste" ? `snippet${ext}` : undefined;
+    const resolvedExt = tab === "paste" ? detectExt(code, ext) : ext;
+    const filePath = tab === "paste" ? `snippet${resolvedExt}` : undefined;
     const hasCode  = tab === "paste" ? code.trim().length > 0 : files.length > 0;
     if (!hasCode) return;
 
@@ -216,7 +227,7 @@ export default function NewScanPage() {
                       onClick={() => setExtOpen(v => !v)}
                       className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground hover:text-foreground border border-border rounded px-2 py-0.5 transition-colors"
                     >
-                      {ext} <ChevronDown className="h-3 w-3" />
+                      {code.length > 0 ? detectExt(code, ext) : ext} <ChevronDown className="h-3 w-3" />
                     </button>
                     {extOpen && (
                       <div className="absolute right-0 top-full mt-1 z-20 w-36 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
