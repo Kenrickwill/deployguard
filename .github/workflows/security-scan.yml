@@ -1,0 +1,54 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents:        read
+  pull-requests:   write
+  security-events: write
+
+jobs:
+  scan:
+    name: DeployGuard Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build GitHub Action
+        run: cd packages/github-action && npm ci && npm run build
+
+      - name: DeployGuard Scan
+        id: scan
+        uses: ./
+        with:
+          api-token:       ${{ secrets.DEPLOYGUARD_TOKEN }}
+          scan-path:       "app"
+          min-score:       50
+          block-on:        "critical"
+          post-pr-comment: ${{ github.event_name == 'pull_request' }}
+          upload-sarif:    true
+          environment:     staging
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## DeployGuard" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Score | **${{ steps.scan.outputs.score }}/100** |" >> $GITHUB_STEP_SUMMARY
+          echo "| Recommendation | ${{ steps.scan.outputs.recommendation }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gate | ${{ steps.scan.outputs.gate-result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Findings | ${{ steps.scan.outputs.finding-count }} |" >> $GITHUB_STEP_SUMMARY
