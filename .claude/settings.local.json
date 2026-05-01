@@ -35,7 +35,10 @@
       "Bash(npm cache *)",
       "Bash(xargs ls *)",
       "Bash(tar -xzf floating-ui-utils-0.2.11.tgz)",
-      "Bash(cp package/dist/floating-ui.utils.dom.* /Users/kenrickwilliams/Desktop/DeployGuard/node_modules/@floating-ui/utils/dist/)"
+      "Bash(cp package/dist/floating-ui.utils.dom.* /Users/kenrickwilliams/Desktop/DeployGuard/node_modules/@floating-ui/utils/dist/)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

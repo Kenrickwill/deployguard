@@ -339,8 +339,9 @@ const ALL_PROBES: Probe[] = [
 // ─── Runner ───────────────────────────────────────────────────────────────────
 
 export interface ProbeRunOptions {
-  timeoutMs?: number;
-  probeIds?:  string[];   // undefined = all probes
+  timeoutMs?:     number;
+  probeIds?:      string[];              // undefined = all probes
+  extraHeaders?:  Record<string, string>; // e.g. { Authorization: "Bearer ..." }
 }
 
 export interface ProbeRunResult {
@@ -364,7 +365,7 @@ export async function runProbes(
   // Fetch headers — HEAD first, GET fallback
   let ctx: ProbeContext;
   try {
-    ctx = await fetchContext(targetUrl, timeoutMs);
+    ctx = await fetchContext(targetUrl, timeoutMs, options.extraHeaders ?? {});
   } catch (err) {
     throw new Error(`Failed to reach target: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -373,7 +374,7 @@ export async function runProbes(
     ? ALL_PROBES.filter(p => options.probeIds!.includes(p(ctx).probeId))
     : ALL_PROBES;
 
-  const results: ProbeResult[] = probes.map(probe => {
+   const results: ProbeResult[] = probes.map(probe => {
     try {
       return probe(ctx);
     } catch {
@@ -388,7 +389,11 @@ export async function runProbes(
   return { targetUrl, probedAt, results, findings };
 }
 
-async function fetchContext(targetUrl: string, timeoutMs: number): Promise<ProbeContext> {
+async function fetchContext(
+  targetUrl: string,
+  timeoutMs: number,
+  extraHeaders: Record<string, string> = {},
+): Promise<ProbeContext> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -397,6 +402,7 @@ async function fetchContext(targetUrl: string, timeoutMs: number): Promise<Probe
       method: "HEAD",
       redirect: "follow",
       signal: controller.signal,
+      headers: extraHeaders,
     });
 
     // Some servers reject HEAD — fall back to GET
@@ -405,7 +411,7 @@ async function fetchContext(targetUrl: string, timeoutMs: number): Promise<Probe
         method: "GET",
         redirect: "follow",
         signal: controller.signal,
-        headers: { "Accept": "text/html,application/json" },
+        headers: { "Accept": "text/html,application/json", ...extraHeaders },
       });
     }
 

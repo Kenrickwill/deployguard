@@ -117,6 +117,18 @@ export interface DynamicTestEntry {
   details:      string;
   payload:      string;
   responseTime: string;
+  remediation?: string;
+}
+
+/** Full result of a DAST run, persisted to sessionStorage for the results page. */
+export interface DynamicTestSession {
+  id:             string;
+  targetUrl:      string;
+  authorizedBy:   string;
+  runAt:          string;
+  responseTimeMs: number;
+  entries:        DynamicTestEntry[];
+  findings:       DynamicFinding[];
 }
 
 export interface Project {
