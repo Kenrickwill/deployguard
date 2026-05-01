@@ -28,8 +28,10 @@ const PROTECTED_API_PREFIXES = [
   "/api/dynamic/run",
   "/api/reports",
   "/api/projects",
-  "/api/tokens",
   "/api/webhooks",
+  // /api/tokens is intentionally NOT here — POST is open so you can
+  // bootstrap your first token. GET and DELETE are protected inside
+  // the route handler itself once Phase 3 auth is wired.
 ];
 
 // Routes that are always public (no key needed)
