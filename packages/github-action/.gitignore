@@ -1,0 +1,3 @@
+node_modules/
+# dist/ is intentionally committed — GitHub Actions requires a compiled dist/index.js
+# Do NOT add dist/ here.

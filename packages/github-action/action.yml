@@ -1,0 +1,105 @@
+name: "DeployGuard Security Scan"
+description: >
+  Runs DeployGuard static analysis on every PR, posts findings as a comment,
+  uploads SARIF to GitHub Code Scanning, and blocks the workflow when score
+  or severity thresholds are not met.
+
+author: "DeployGuard"
+
+branding:
+  icon:  "shield"
+  color: "blue"
+
+# ── Inputs ────────────────────────────────────────────────────────────────────
+
+inputs:
+
+  api-url:
+    description: >
+      Base URL of the DeployGuard API (no trailing slash).
+      Defaults to the hosted service.
+    required: false
+    default: "https://deployguard-kenrickwills-projects.vercel.app"
+
+  api-token:
+    description: >
+      DeployGuard API token. Store as a repository secret and reference with
+      ${{ secrets.DEPLOYGUARD_TOKEN }}.
+    required: true
+
+  github-token:
+    description: >
+      GitHub token used to post PR comments and upload SARIF.
+      Defaults to the built-in GITHUB_TOKEN.
+    required: false
+    default: ${{ github.token }}
+
+  scan-path:
+    description: >
+      Path (relative to repo root) to scan. Defaults to the entire workspace.
+      Use "src" or "app/api" to narrow scope.
+    required: false
+    default: "."
+
+  min-score:
+    description: Minimum passing score (0–100). Gate fails if score is below this.
+    required: false
+    default: "60"
+
+  block-on:
+    description: >
+      Comma-separated severity levels that trigger a gate failure.
+      E.g. "critical" or "critical,high".
+    required: false
+    default: "critical"
+
+  post-pr-comment:
+    description: Post a summary comment on the pull request.
+    required: false
+    default: "true"
+
+  upload-sarif:
+    description: Upload SARIF results to GitHub Code Scanning.
+    required: false
+    default: "true"
+
+  environment:
+    description: Environment label attached to the scan (staging, production, etc.)
+    required: false
+    default: "staging"
+
+  project-id:
+    description: DeployGuard project ID to persist results against (optional).
+    required: false
+    default: ""
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+
+outputs:
+
+  scan-id:
+    description: Unique ID of the completed scan.
+
+  score:
+    description: Overall security score (0–100).
+
+  recommendation:
+    description: "'deploy', 'review', or 'block'"
+
+  gate-result:
+    description: "'pass' or 'fail'"
+
+  finding-count:
+    description: Total number of findings.
+
+  report-path:
+    description: Local path to the JSON report artifact.
+
+  sarif-id:
+    description: Path to the uploaded SARIF file.
+
+# ── Runner ────────────────────────────────────────────────────────────────────
+
+runs:
+  using: "node20"
+  main:  "dist/index.js"

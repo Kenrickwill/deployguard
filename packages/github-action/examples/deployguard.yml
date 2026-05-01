@@ -1,0 +1,55 @@
+# DeployGuard security scan workflow
+# Copy this file to .github/workflows/deployguard.yml in your repository.
+#
+# Required setup:
+#   1. Add DEPLOYGUARD_TOKEN to your repo secrets
+#      (Settings → Secrets and variables → Actions → New repository secret)
+#   2. Get a token: https://deployguard.vercel.app/settings
+
+name: DeployGuard Security Scan
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master]
+
+# Allow the action to post PR comments and upload SARIF
+permissions:
+  contents:      read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: DeployGuard Scan
+        id: deployguard
+        uses: Kenrickwill/deployguard@v1
+        with:
+          api-token:       ${{ secrets.DEPLOYGUARD_TOKEN }}
+          scan-path:       "."
+          min-score:       60
+          block-on:        "critical"
+          post-pr-comment: true
+          upload-sarif:    true
+          environment:     staging
+
+      # Optional: surface results in workflow summary
+      - name: Scan Summary
+        if: always()
+        run: |
+          echo "## DeployGuard Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Score | ${{ steps.deployguard.outputs.score }}/100 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Recommendation | ${{ steps.deployguard.outputs.recommendation }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gate | ${{ steps.deployguard.outputs.gate-result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Findings | ${{ steps.deployguard.outputs.finding-count }} |" >> $GITHUB_STEP_SUMMARY
