@@ -14,12 +14,10 @@
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
 import prisma from "@/lib/db/client";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ApiToken = any;
+import type { ApiToken } from "@prisma/client";
 
 export type ValidateResult =
-  | { ok: true;  token: ApiToken; userId: string | null }
+  | { ok: true;  token: ApiToken | null; userId: string | null }
   | { ok: false; error: string };
 
 /**
@@ -64,25 +62,23 @@ export async function validateApiKey(
 ): Promise<ValidateResult> {
   const rawKey = request.headers.get("x-dg-api-key");
 
-  // In development with no DB, allow all requests through so the UI still works.
+  // In development with no key present, allow through so the UI still works.
   if (!rawKey) {
     if (process.env.NODE_ENV === "development") {
-      return { ok: true, token: null as unknown as ApiToken, userId: null };
+      return { ok: true, token: null, userId: null };
     }
     return { ok: false, error: "Missing API key." };
   }
 
   const keyHash = hashApiKey(rawKey);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = prisma as any;
   let token: ApiToken | null;
   try {
-    token = await db.apiToken.findUnique({ where: { keyHash } });
+    token = await prisma.apiToken.findUnique({ where: { keyHash } });
   } catch {
     // DB not connected yet — allow through in development
     if (process.env.NODE_ENV === "development") {
-      return { ok: true, token: null as unknown as ApiToken, userId: null };
+      return { ok: true, token: null, userId: null };
     }
     return { ok: false, error: "Authentication service unavailable." };
   }
@@ -98,9 +94,9 @@ export async function validateApiKey(
   }
 
   // Fire-and-forget: update lastUsedAt without blocking the response
-  void db.apiToken.update({
-    where:  { id: token.id },
-    data:   { lastUsedAt: new Date() },
+  void prisma.apiToken.update({
+    where: { id: token.id },
+    data:  { lastUsedAt: new Date() },
   }).catch(() => { /* non-critical */ });
 
   return { ok: true, token, userId: token.userId };

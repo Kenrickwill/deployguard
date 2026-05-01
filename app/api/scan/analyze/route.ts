@@ -133,9 +133,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse<A
 
     if (body.projectId) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const db = prisma as any;
-        const dbScan = await db.scan.create({
+        const dbScan = await prisma.scan.create({
           data: {
             projectId:       body.projectId,
             userId:          auth.userId ?? undefined,

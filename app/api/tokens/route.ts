@@ -14,9 +14,6 @@ import prisma from "@/lib/db/client";
 import { generateApiKey } from "@/lib/auth/api-key";
 import type { ApiResponse } from "@/types/api";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = prisma as any;
-
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const CreateTokenSchema = z.object({
@@ -58,7 +55,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse<{
 
   let token;
   try {
-    token = await db.apiToken.create({
+    token = await prisma.apiToken.create({
       data: {
         name:      body.name,
         keyHash,
@@ -86,7 +83,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const userId    = searchParams.get("userId");
 
   try {
-    const tokens = await db.apiToken.findMany({
+    const tokens = await prisma.apiToken.findMany({
       where: {
         ...(projectId ? { projectId } : {}),
         ...(userId    ? { userId }    : {}),
@@ -125,7 +122,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    await db.apiToken.update({
+    await prisma.apiToken.update({
       where: { id: body.id },
       data:  { revokedAt: new Date() },
     });

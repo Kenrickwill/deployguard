@@ -131,10 +131,8 @@ export async function POST(
 
     // ── Persist to database (best-effort) ──────────────────────────────────────
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = prisma as any;
       const vulnEntries = entries.filter(e => e.vulnerable);
-      await db.sandboxJob.create({
+      await prisma.sandboxJob.create({
         data: {
           targetUrl:   body.targetUrl,
           status:      "COMPLETED",
@@ -143,7 +141,7 @@ export async function POST(
         },
       });
       // Audit log
-      void db.auditLog.create({
+      void prisma.auditLog.create({
         data: {
           actor:      auth.userId ?? body.authorizedBy,
           action:     "dynamic_test.run",

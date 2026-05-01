@@ -1,4 +1,7 @@
-import "dotenv/config";
+// Load .env.local first (Next.js convention), then fall back to .env
+import { config } from "dotenv";
+config({ path: ".env.local" });
+config(); // fall back to .env for anything not in .env.local
 import { defineConfig } from "prisma/config";
 
 /**
