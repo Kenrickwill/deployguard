@@ -1,42 +1,24 @@
 /**
- * Prisma 7 requires a Driver Adapter — it no longer connects to the DB directly.
+ * Prisma 7 + Neon adapter (WebSocket Pool).
  *
- * For Neon (Vercel's recommended Postgres): we use @prisma/adapter-neon +
- * @neondatabase/serverless which works in both Node.js and Edge runtimes.
- *
- * The pooled connection string (DATABASE_URL) is used at runtime.
- * The direct / unpooled string (DATABASE_URL_UNPOOLED) is used by Prisma Migrate
+ * PrismaNeon takes a PoolConfig directly — no need to import neon() separately.
+ * The pooled DATABASE_URL is used at runtime; migrations use DATABASE_URL_UNPOOLED
  * (configured in prisma.config.ts).
  */
 
 import { PrismaClient } from "@prisma/client";
+import { PrismaNeon }   from "@prisma/adapter-neon";
 
-// ── Adapter setup ─────────────────────────────────────────────────────────────
-
-// We import lazily so the build doesn't fail when the package isn't installed.
-// Once @prisma/adapter-neon is in node_modules this resolves fine.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { neon } = require("@neondatabase/serverless");
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { PrismaNeon } = require("@prisma/adapter-neon");
-
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    // No database connected yet — return a dummy client that logs a warning.
-    // In development, routes fall back gracefully (see lib/auth/api-key.ts).
-    console.warn(
-      "[DeployGuard] DATABASE_URL is not set. Database features are disabled. " +
-      "See .env.local for setup instructions.",
+    throw new Error(
+      "[DeployGuard] DATABASE_URL is not set. Add it to .env.local and restart the dev server.",
     );
-    // Return a bare client; queries will fail at runtime but the app will boot.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return new (PrismaClient as any)();
   }
 
-  const sql     = neon(connectionString);
-  const adapter = new PrismaNeon(sql);
+  const adapter = new PrismaNeon({ connectionString });
 
   return new PrismaClient({
     adapter,
@@ -44,9 +26,7 @@ function createPrismaClient() {
   });
 }
 
-// ── Singleton ─────────────────────────────────────────────────────────────────
-
-const globalForPrisma = globalThis as unknown as { prisma: ReturnType<typeof createPrismaClient> };
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
