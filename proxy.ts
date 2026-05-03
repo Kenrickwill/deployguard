@@ -47,7 +47,7 @@ const KEY_REGEX = /^dg_(live|test)_[0-9a-f]{32}$/;
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
   // Only intercept /api/* paths
