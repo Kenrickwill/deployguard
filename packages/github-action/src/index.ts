@@ -163,7 +163,7 @@ async function run(): Promise<void> {
 
     const ctx     = github.context;
     const isPr    = !!ctx.payload.pull_request;
-    const ghToken = process.env.GITHUB_TOKEN ?? core.getInput("github-token");
+    const ghToken = core.getInput("github-token") || process.env.GITHUB_TOKEN || "";
 
     if (postComment && isPr && ghToken) {
       core.info("Posting PR comment…");

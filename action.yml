@@ -19,14 +19,16 @@ inputs:
 
   api-token:
     description: >
-      DeployGuard API token. Store as a repository secret:
-      ${{ secrets.DEPLOYGUARD_TOKEN }}
+      DeployGuard API token. Store as a repository secret named DEPLOYGUARD_TOKEN
+      and reference it with secrets.DEPLOYGUARD_TOKEN in your workflow.
     required: true
 
   github-token:
-    description: GitHub token for PR comments and SARIF upload.
+    description: >
+      GitHub token for PR comments and SARIF upload. Defaults to the built-in
+      GITHUB_TOKEN. Override only if you need a PAT with extra permissions.
     required: false
-    default: ${{ github.token }}
+    default: ""
 
   scan-path:
     description: Directory to scan (relative to repo root).
